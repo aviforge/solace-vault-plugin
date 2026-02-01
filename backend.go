@@ -37,6 +37,7 @@ func backend() *solaceBackend {
 			pathConfigBrokers(b),
 			pathRoles(b),
 			pathRotateRole(b),
+			pathCreds(b),
 		),
 	}
 
