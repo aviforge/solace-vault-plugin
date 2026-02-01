@@ -36,7 +36,12 @@ func backend() *solaceBackend {
 				"roles/*",
 			},
 		},
-		Paths: framework.PathAppend(),
+		Paths: framework.PathAppend(
+            pathConfigBrokers(b),
+            pathRoles(b),
+            pathCreds(b),
+            pathRotateRole(b),
+       ),
 	}
 
 	return b
