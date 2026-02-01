@@ -2,6 +2,7 @@ package solacevaultplugin
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
@@ -12,6 +13,7 @@ const backendHelp = "The Solace secrets engine rotates CLI user passwords on Sol
 
 type solaceBackend struct {
 	*framework.Backend
+	roleMutex sync.Mutex
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {

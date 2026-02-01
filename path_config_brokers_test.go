@@ -102,6 +102,66 @@ func TestPathConfigBrokers_WriteReadDeleteList(t *testing.T) {
 	}
 }
 
+func TestPathConfigBrokers_UpdatePreservesFields(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	// Create broker with all fields
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"semp_url":        "https://broker:8080",
+			"admin_username":  "admin",
+			"admin_password":  "secret",
+			"semp_version":    "soltr/10_4",
+			"tls_skip_verify": true,
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("create: err=%v, resp=%v", err, resp)
+	}
+
+	// Update only admin_password — other fields should be preserved
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"admin_password": "new-secret",
+		},
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("update: err=%v, resp=%v", err, resp)
+	}
+
+	// Read and verify all fields preserved
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || resp == nil {
+		t.Fatalf("read: err=%v, resp=%v", err, resp)
+	}
+	if resp.Data["semp_url"] != "https://broker:8080" {
+		t.Errorf("semp_url = %v, want https://broker:8080", resp.Data["semp_url"])
+	}
+	if resp.Data["admin_username"] != "admin" {
+		t.Errorf("admin_username = %v, want admin", resp.Data["admin_username"])
+	}
+	if resp.Data["semp_version"] != "soltr/10_4" {
+		t.Errorf("semp_version = %v, want soltr/10_4", resp.Data["semp_version"])
+	}
+	if resp.Data["tls_skip_verify"] != true {
+		t.Errorf("tls_skip_verify = %v, want true", resp.Data["tls_skip_verify"])
+	}
+}
+
 func TestPathConfigBrokers_ValidationErrors(t *testing.T) {
 	b, storage := getTestBackend(t)
 	ctx := context.Background()
@@ -122,5 +182,41 @@ func TestPathConfigBrokers_ValidationErrors(t *testing.T) {
 	}
 	if resp == nil || !resp.IsError() {
 		t.Error("expected error response for empty semp_url")
+	}
+}
+
+func TestPathConfigBrokers_InvalidURLScheme(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		sempURL string
+	}{
+		{"file scheme", "file:///etc/passwd"},
+		{"ftp scheme", "ftp://broker:21"},
+		{"no scheme", "broker:8080"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &logical.Request{
+				Operation: logical.CreateOperation,
+				Path:      "config/brokers/bad",
+				Storage:   storage,
+				Data: map[string]interface{}{
+					"semp_url":       tc.sempURL,
+					"admin_username": "admin",
+					"admin_password": "secret",
+				},
+			}
+			resp, err := b.HandleRequest(ctx, req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp == nil || !resp.IsError() {
+				t.Errorf("expected error for semp_url=%q", tc.sempURL)
+			}
+		})
 	}
 }

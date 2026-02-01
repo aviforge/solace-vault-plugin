@@ -2,6 +2,7 @@ package solacevaultplugin
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -88,12 +89,24 @@ func (b *solaceBackend) pathConfigBrokersExistenceCheck(ctx context.Context, req
 func (b *solaceBackend) pathConfigBrokersWrite(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	name := d.Get("name").(string)
 
-	config := &BrokerConfig{
-		SEMPURL:       d.Get("semp_url").(string),
-		AdminUsername: d.Get("admin_username").(string),
-		AdminPassword: d.Get("admin_password").(string),
+	// Read existing config for merging on updates
+	config, err := getBroker(ctx, req.Storage, name)
+	if err != nil {
+		return nil, err
+	}
+	if config == nil {
+		config = &BrokerConfig{}
 	}
 
+	if v, ok := d.GetOk("semp_url"); ok {
+		config.SEMPURL = v.(string)
+	}
+	if v, ok := d.GetOk("admin_username"); ok {
+		config.AdminUsername = v.(string)
+	}
+	if v, ok := d.GetOk("admin_password"); ok {
+		config.AdminPassword = v.(string)
+	}
 	if v, ok := d.GetOk("semp_version"); ok {
 		config.SEMPVersion = v.(string)
 	}
@@ -103,6 +116,16 @@ func (b *solaceBackend) pathConfigBrokersWrite(ctx context.Context, req *logical
 
 	if config.SEMPURL == "" {
 		return logical.ErrorResponse("semp_url is required"), nil
+	}
+	parsedURL, err := url.Parse(config.SEMPURL)
+	if err != nil {
+		return logical.ErrorResponse("semp_url is not a valid URL"), nil
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return logical.ErrorResponse("semp_url must use http or https scheme"), nil
+	}
+	if parsedURL.Host == "" {
+		return logical.ErrorResponse("semp_url must include a host"), nil
 	}
 	if config.AdminUsername == "" {
 		return logical.ErrorResponse("admin_username is required"), nil

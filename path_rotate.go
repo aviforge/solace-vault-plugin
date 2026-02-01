@@ -52,6 +52,9 @@ func (b *solaceBackend) pathRotateRoleWrite(ctx context.Context, req *logical.Re
 }
 
 func (b *solaceBackend) rotateRole(ctx context.Context, s logical.Storage, name string) (*logical.Response, error) {
+	b.roleMutex.Lock()
+	defer b.roleMutex.Unlock()
+
 	role, err := getRole(ctx, s, name)
 	if err != nil {
 		return nil, err
@@ -74,15 +77,28 @@ func (b *solaceBackend) rotateRole(ctx context.Context, s logical.Storage, name 
 	}
 
 	client := NewSEMPClient(brokerConfig)
-	if err := client.ChangePassword(role.CLIUsername, newPassword); err != nil {
-		return nil, fmt.Errorf("rotating password for %q on broker %q: %w", role.CLIUsername, role.Broker, err)
+	if err := client.ChangePassword(ctx, role.CLIUsername, newPassword); err != nil {
+		b.Logger().Error("SEMP password change failed",
+			"role", name,
+			"cli_username", role.CLIUsername,
+			"broker", role.Broker,
+			"error", err,
+		)
+		return logical.ErrorResponse("failed to rotate password for role %q on broker %q", name, role.Broker), nil
 	}
 
 	role.Password = newPassword
 	role.LastRotated = time.Now().UTC()
 
 	if err := putRole(ctx, s, name, role); err != nil {
-		return nil, fmt.Errorf("storing rotated password: %w", err)
+		b.Logger().Error("password changed on broker but failed to store in Vault; manual recovery required",
+			"role", name,
+			"cli_username", role.CLIUsername,
+			"broker", role.Broker,
+			"new_password", newPassword,
+			"error", err,
+		)
+		return nil, fmt.Errorf("storing rotated password for %q: broker password was changed but Vault storage failed, manual recovery required: %w", name, err)
 	}
 
 	return nil, nil

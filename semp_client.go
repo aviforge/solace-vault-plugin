@@ -1,6 +1,7 @@
 package solacevaultplugin
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
@@ -32,12 +33,19 @@ type sempExecuteResult struct {
 
 // NewSEMPClient creates a client from a BrokerConfig.
 func NewSEMPClient(config *BrokerConfig) *SEMPClient {
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+	}
 	if config.TLSSkipVerify {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	return &SEMPClient{
@@ -51,10 +59,10 @@ func NewSEMPClient(config *BrokerConfig) *SEMPClient {
 }
 
 // ChangePassword changes a CLI user's password on the broker via SEMP v1.
-func (c *SEMPClient) ChangePassword(cliUsername, newPassword string) error {
+func (c *SEMPClient) ChangePassword(ctx context.Context, cliUsername, newPassword string) error {
 	body := buildChangePasswordXML(c.SEMPVersion, cliUsername, newPassword)
 
-	req, err := http.NewRequest(http.MethodPost, c.SEMPURL+"/SEMP", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.SEMPURL+"/SEMP", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
@@ -67,7 +75,7 @@ func (c *SEMPClient) ChangePassword(cliUsername, newPassword string) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("reading SEMP response: %w", err)
 	}
@@ -92,14 +100,20 @@ func (c *SEMPClient) ChangePassword(cliUsername, newPassword string) error {
 	return nil
 }
 
+func escapeXML(s string) string {
+	var buf strings.Builder
+	xml.EscapeText(&buf, []byte(s))
+	return buf.String()
+}
+
 func buildChangePasswordXML(sempVersion, username, password string) string {
 	var b strings.Builder
 	if sempVersion != "" {
-		fmt.Fprintf(&b, `<rpc semp-version="%s">`, sempVersion)
+		fmt.Fprintf(&b, `<rpc semp-version="%s">`, escapeXML(sempVersion))
 	} else {
 		b.WriteString(`<rpc>`)
 	}
-	fmt.Fprintf(&b, `<username><name>%s</name><change-password><password>%s</password></change-password></username>`, username, password)
+	fmt.Fprintf(&b, `<username><name>%s</name><change-password><password>%s</password></change-password></username>`, escapeXML(username), escapeXML(password))
 	b.WriteString(`</rpc>`)
 	return b.String()
 }
