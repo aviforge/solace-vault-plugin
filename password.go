@@ -2,6 +2,7 @@ package solacevaultplugin
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 )
 
@@ -9,6 +10,9 @@ import (
 const passwordCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^-_=+.~"
 
 func generatePassword(length int) (string, error) {
+	if length < 16 {
+		return "", fmt.Errorf("password length must be at least 16, got %d", length)
+	}
 	result := make([]byte, length)
 	charsetLen := big.NewInt(int64(len(passwordCharset)))
 

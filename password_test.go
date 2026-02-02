@@ -31,6 +31,21 @@ func TestGeneratePassword_Uniqueness(t *testing.T) {
 	}
 }
 
+func TestGeneratePassword_MinLength(t *testing.T) {
+	_, err := generatePassword(15)
+	if err == nil {
+		t.Error("expected error for length < 16")
+	}
+
+	pw, err := generatePassword(16)
+	if err != nil {
+		t.Fatalf("generatePassword(16): %v", err)
+	}
+	if len(pw) != 16 {
+		t.Errorf("len = %d, want 16", len(pw))
+	}
+}
+
 func TestGeneratePassword_MaxLength(t *testing.T) {
 	pw, err := generatePassword(128)
 	if err != nil {

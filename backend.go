@@ -3,6 +3,7 @@ package solacevaultplugin
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -12,7 +13,7 @@ const backendHelp = "The Solace secrets engine rotates CLI user passwords on Sol
 
 type solaceBackend struct {
 	*framework.Backend
-	roleMutex sync.Mutex
+	roleMutex sync.RWMutex
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
@@ -36,6 +37,7 @@ func backend() *solaceBackend {
 				"roles/*",
 			},
 		},
+		PeriodicFunc: b.periodicFunc,
 		Paths: framework.PathAppend(
             pathConfigBrokers(b),
             pathRoles(b),
@@ -45,4 +47,30 @@ func backend() *solaceBackend {
 	}
 
 	return b
+}
+
+func (b *solaceBackend) periodicFunc(ctx context.Context, req *logical.Request) error {
+	roles, err := listRoles(ctx, req.Storage)
+	if err != nil {
+		b.Logger().Error("periodic: failed to list roles", "error", err)
+		return nil
+	}
+
+	for _, name := range roles {
+		role, err := getRole(ctx, req.Storage, name)
+		if err != nil {
+			b.Logger().Error("periodic: failed to read role", "role", name, "error", err)
+			continue
+		}
+		if role == nil || role.RotationPeriod == 0 || role.LastRotated.IsZero() {
+			continue
+		}
+		if time.Now().UTC().After(role.LastRotated.Add(role.RotationPeriod)) {
+			if _, err := b.rotateRole(ctx, req.Storage, name); err != nil {
+				b.Logger().Error("periodic: failed to rotate role", "role", name, "error", err)
+			}
+		}
+	}
+
+	return nil
 }

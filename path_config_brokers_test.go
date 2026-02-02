@@ -185,6 +185,100 @@ func TestPathConfigBrokers_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestPathConfigBrokers_DeleteBlockedByRole(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	writeBroker(t, b, storage, "test-broker")
+
+	// Create a role referencing the broker
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "roles/test-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"broker":       "test-broker",
+			"cli_username": "monitor",
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("create role: err=%v, resp=%v", err, resp)
+	}
+
+	// Attempt to delete broker — should be blocked
+	req = &logical.Request{
+		Operation: logical.DeleteOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || !resp.IsError() {
+		t.Error("expected error response when deleting broker with dependent roles")
+	}
+}
+
+func TestPathConfigBrokers_DeleteAfterRoleRemoved(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	writeBroker(t, b, storage, "test-broker")
+
+	// Create a role referencing the broker
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "roles/test-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"broker":       "test-broker",
+			"cli_username": "monitor",
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("create role: err=%v, resp=%v", err, resp)
+	}
+
+	// Delete the role first
+	req = &logical.Request{
+		Operation: logical.DeleteOperation,
+		Path:      "roles/test-role",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("delete role: err=%v, resp=%v", err, resp)
+	}
+
+	// Now delete broker — should succeed
+	req = &logical.Request{
+		Operation: logical.DeleteOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("delete broker: err=%v, resp=%v", err, resp)
+	}
+
+	// Verify broker is gone
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatalf("read after delete: err=%v", err)
+	}
+	if resp != nil {
+		t.Error("expected nil response after delete")
+	}
+}
+
 func TestPathConfigBrokers_InvalidURLScheme(t *testing.T) {
 	b, storage := getTestBackend(t)
 	ctx := context.Background()

@@ -10,6 +10,7 @@ import (
 )
 
 const defaultPasswordLength = 32
+const minRotationInterval = 10 * time.Second
 
 func pathRotateRole(b *solaceBackend) []*framework.Path {
 	return []*framework.Path{
@@ -48,6 +49,15 @@ func (b *solaceBackend) pathRotateRoleExistenceCheck(ctx context.Context, req *l
 
 func (b *solaceBackend) pathRotateRoleWrite(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	name := d.Get("name").(string)
+
+	role, err := getRole(ctx, req.Storage, name)
+	if err != nil {
+		return nil, err
+	}
+	if role != nil && !role.LastRotated.IsZero() && time.Since(role.LastRotated) < minRotationInterval {
+		return logical.ErrorResponse("role %q was rotated less than %s ago; try again later", name, minRotationInterval), nil
+	}
+
 	return b.rotateRole(ctx, req.Storage, name)
 }
 
@@ -95,7 +105,6 @@ func (b *solaceBackend) rotateRole(ctx context.Context, s logical.Storage, name 
 			"role", name,
 			"cli_username", role.CLIUsername,
 			"broker", role.Broker,
-			"new_password", newPassword,
 			"error", err,
 		)
 		return nil, fmt.Errorf("storing rotated password for %q: broker password was changed but Vault storage failed, manual recovery required: %w", name, err)

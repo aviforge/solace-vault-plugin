@@ -33,6 +33,9 @@ func pathCreds(b *solaceBackend) []*framework.Path {
 func (b *solaceBackend) pathCredsRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	name := d.Get("name").(string)
 
+	b.roleMutex.RLock()
+	defer b.roleMutex.RUnlock()
+
 	role, err := getRole(ctx, req.Storage, name)
 	if err != nil {
 		return nil, err

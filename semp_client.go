@@ -33,9 +33,7 @@ type sempExecuteResult struct {
 
 // NewSEMPClient creates a client from a BrokerConfig.
 func NewSEMPClient(config *BrokerConfig) *SEMPClient {
-	transport := &http.Transport{
-		DisableKeepAlives: true,
-	}
+	transport := &http.Transport{}
 	if config.TLSSkipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}

@@ -2,7 +2,9 @@ package solacevaultplugin
 
 import (
 	"context"
+	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -164,6 +166,24 @@ func (b *solaceBackend) pathConfigBrokersRead(ctx context.Context, req *logical.
 
 func (b *solaceBackend) pathConfigBrokersDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	name := d.Get("name").(string)
+
+	roles, err := listRoles(ctx, req.Storage)
+	if err != nil {
+		return nil, fmt.Errorf("checking dependent roles: %w", err)
+	}
+	var dependents []string
+	for _, roleName := range roles {
+		role, err := getRole(ctx, req.Storage, roleName)
+		if err != nil {
+			return nil, fmt.Errorf("reading role %q: %w", roleName, err)
+		}
+		if role != nil && role.Broker == name {
+			dependents = append(dependents, roleName)
+		}
+	}
+	if len(dependents) > 0 {
+		return logical.ErrorResponse("cannot delete broker %q: referenced by roles: %s", name, strings.Join(dependents, ", ")), nil
+	}
 
 	if err := deleteBroker(ctx, req.Storage, name); err != nil {
 		return nil, err

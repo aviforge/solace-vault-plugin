@@ -176,45 +176,56 @@ func TestPathRotate_SEMPFailure_SanitizedError(t *testing.T) {
 }
 
 func TestPathRotate_BrokerNotFound(t *testing.T) {
-	b, storage := getTestBackend(t)
+	_, storage := getTestBackend(t)
 	ctx := context.Background()
 
-	// Create a role referencing a broker, then delete the broker
-	writeBroker(t, b, storage, "temp-broker")
+	// Write role directly to storage referencing a non-existent broker
+	role := &RoleEntry{
+		Broker:      "nonexistent-broker",
+		CLIUsername: "test",
+	}
+	if err := putRole(ctx, storage, "orphan-role", role); err != nil {
+		t.Fatalf("putRole: %v", err)
+	}
 
+	b, _ := getTestBackend(t)
+	// Try to rotate using the same storage
 	req := &logical.Request{
-		Operation: logical.CreateOperation,
-		Path:      "roles/orphan-role",
-		Storage:   storage,
-		Data: map[string]interface{}{
-			"broker":       "temp-broker",
-			"cli_username": "test",
-		},
-	}
-	resp, err := b.HandleRequest(ctx, req)
-	if err != nil || (resp != nil && resp.IsError()) {
-		t.Fatalf("create role: err=%v, resp=%v", err, resp)
-	}
-
-	// Delete broker
-	req = &logical.Request{
-		Operation: logical.DeleteOperation,
-		Path:      "config/brokers/temp-broker",
-		Storage:   storage,
-	}
-	b.HandleRequest(ctx, req)
-
-	// Try to rotate
-	req = &logical.Request{
 		Operation: logical.CreateOperation,
 		Path:      "rotate-role/orphan-role",
 		Storage:   storage,
 	}
-	resp, err = b.HandleRequest(ctx, req)
+	resp, err := b.HandleRequest(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp == nil || !resp.IsError() {
 		t.Error("expected error response for orphaned role")
+	}
+}
+
+func TestPathRotate_RateLimited(t *testing.T) {
+	b, storage, server := setupRotationTest(t)
+	defer server.Close()
+	ctx := context.Background()
+
+	// First rotation should succeed
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "rotate-role/test-role",
+		Storage:   storage,
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("first rotate: err=%v, resp=%v", err, resp)
+	}
+
+	// Immediate second rotation should be rate-limited
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || !resp.IsError() {
+		t.Error("expected error response for rate-limited rotation")
 	}
 }
