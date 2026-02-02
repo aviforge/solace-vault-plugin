@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-const defaultPasswordLength = 32
+const defaultPasswordLength = 25
 const minRotationInterval = 10 * time.Second
 
 func pathRotateRole(b *solaceBackend) []*framework.Path {
@@ -81,7 +81,7 @@ func (b *solaceBackend) rotateRole(ctx context.Context, s logical.Storage, name 
 		return logical.ErrorResponse("broker %q not found for role %q", role.Broker, name), nil
 	}
 
-	newPassword, err := generatePassword(defaultPasswordLength)
+	newPassword, err := generatePassword(role.PasswordLength)
 	if err != nil {
 		return nil, fmt.Errorf("generating password: %w", err)
 	}

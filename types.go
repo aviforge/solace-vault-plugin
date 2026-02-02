@@ -16,6 +16,7 @@ type RoleEntry struct {
 	Broker         string        `json:"broker"`
 	CLIUsername    string        `json:"cli_username"`
 	RotationPeriod time.Duration `json:"rotation_period,omitempty"`
+	PasswordLength int           `json:"password_length,omitempty"`
 	Password       string        `json:"password,omitempty"`
 	LastRotated    time.Time     `json:"last_rotated,omitempty"`
 }

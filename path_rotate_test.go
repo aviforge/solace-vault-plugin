@@ -229,3 +229,66 @@ func TestPathRotate_RateLimited(t *testing.T) {
 		t.Error("expected error response for rate-limited rotation")
 	}
 }
+
+func TestPathRotate_CustomPasswordLength(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(`<rpc-reply><execute-result code="ok"/></rpc-reply>`))
+	}))
+	defer server.Close()
+
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	// Create broker
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "config/brokers/test-broker",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"semp_url":       server.URL,
+			"admin_username": "admin",
+			"admin_password": "secret",
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("create broker: err=%v, resp=%v", err, resp)
+	}
+
+	// Create role with custom password length
+	req = &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "roles/custom-len-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"broker":          "test-broker",
+			"cli_username":    "monitor",
+			"password_length": 64,
+		},
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("create role: err=%v, resp=%v", err, resp)
+	}
+
+	// Rotate
+	req = &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "rotate-role/custom-len-role",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("rotate: err=%v, resp=%v", err, resp)
+	}
+
+	// Verify stored password is 64 chars
+	role, err := getRole(ctx, storage, "custom-len-role")
+	if err != nil {
+		t.Fatalf("getRole: %v", err)
+	}
+	if len(role.Password) != 64 {
+		t.Errorf("password length = %d, want 64", len(role.Password))
+	}
+}

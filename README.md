@@ -8,6 +8,7 @@ A HashiCorp Vault secrets engine plugin that manages password rotation for Solac
 - **On-demand rotation** — trigger immediate password rotation via the Vault CLI or HTTP API
 - **Automatic rotation** — configure a `rotation_period` per role for scheduled rotation
 - **Encrypted storage** — broker admin passwords and role credentials are sealed/wrapped at rest by Vault
+- **Configurable password length** — set `password_length` per role (16–128 characters, default 25)
 - **Safe rotation** — new passwords are only stored in Vault after the broker confirms the change succeeded
 
 ## Prerequisites
@@ -154,11 +155,12 @@ vault write solace/roles/backup-user \
   broker="prod-east" \
   cli_username="backup"
 
-# Same CLI user on a different broker
+# Role with a custom password length (64 characters)
 vault write solace/roles/monitoring-user-west \
   broker="prod-west" \
   cli_username="monitor" \
-  rotation_period="24h"
+  rotation_period="24h" \
+  password_length=64
 ```
 
 **HTTP API:**
@@ -167,11 +169,11 @@ vault write solace/roles/monitoring-user-west \
 curl -s \
   -H "X-Vault-Token: $VAULT_TOKEN" \
   -X POST \
-  -d '{"broker":"prod-east","cli_username":"monitor","rotation_period":86400}' \
+  -d '{"broker":"prod-east","cli_username":"monitor","rotation_period":86400,"password_length":64}' \
   $VAULT_ADDR/v1/solace/roles/monitoring-user
 ```
 
-Note: `rotation_period` is specified in seconds over the HTTP API (86400 = 24h).
+Note: `rotation_period` is specified in seconds over the HTTP API (86400 = 24h). `password_length` is optional and defaults to 25.
 
 ```bash
 # List roles
@@ -350,7 +352,8 @@ path "solace/rotate-role/*" {
 |-----------|------|----------|-------------|
 | `broker` | string | yes | Name of a configured broker |
 | `cli_username` | string | yes | CLI user account name on the broker |
-| `rotation_period` | int | no | Auto-rotation interval in seconds. `0` disables automatic rotation. |
+| `rotation_period` | int | no | Auto-rotation interval in seconds. `0` (default) disables automatic rotation. |
+| `password_length` | int | no | Length of generated passwords, 16–128. Default: `25`. |
 
 ## Development
 

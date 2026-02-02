@@ -41,6 +41,7 @@ func TestPathRoles_WriteReadDeleteList(t *testing.T) {
 			"broker":          "test-broker",
 			"cli_username":    "monitor",
 			"rotation_period": 86400,
+			"password_length": 25,
 		},
 	}
 	resp, err := b.HandleRequest(ctx, req)
@@ -66,6 +67,9 @@ func TestPathRoles_WriteReadDeleteList(t *testing.T) {
 	}
 	if resp.Data["rotation_period"] != 86400 {
 		t.Errorf("rotation_period = %v, want 86400", resp.Data["rotation_period"])
+	}
+	if resp.Data["password_length"] != 25 {
+		t.Errorf("password_length = %v, want 25", resp.Data["password_length"])
 	}
 
 	// List roles
@@ -128,5 +132,81 @@ func TestPathRoles_BrokerNotFound(t *testing.T) {
 	}
 	if resp == nil || !resp.IsError() {
 		t.Error("expected error response for nonexistent broker")
+	}
+}
+
+func TestPathRoles_PasswordLengthValidation(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	writeBroker(t, b, storage, "test-broker")
+
+	tests := []struct {
+		name           string
+		roleSuffix     string
+		passwordLength int
+		wantError      bool
+	}{
+		{"below minimum rejected", "below-min", 15, true},
+		{"minimum accepted", "min", 16, false},
+		{"default accepted", "default", 25, false},
+		{"maximum accepted", "max", 128, false},
+		{"above maximum rejected", "above-max", 129, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &logical.Request{
+				Operation: logical.CreateOperation,
+				Path:      "roles/len-test-" + tt.roleSuffix,
+				Storage:   storage,
+				Data: map[string]interface{}{
+					"broker":          "test-broker",
+					"cli_username":    "test",
+					"password_length": tt.passwordLength,
+				},
+			}
+			resp, err := b.HandleRequest(ctx, req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantError {
+				if resp == nil || !resp.IsError() {
+					t.Errorf("expected error for password_length=%d, got success", tt.passwordLength)
+				}
+			} else {
+				if resp != nil && resp.IsError() {
+					t.Errorf("expected success for password_length=%d, got error: %v", tt.passwordLength, resp.Data["error"])
+				}
+			}
+		})
+	}
+
+	// Verify omitted password_length defaults to 25
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "roles/len-test-omitted",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"broker":       "test-broker",
+			"cli_username": "test",
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("write with omitted password_length: err=%v, resp=%v", err, resp)
+	}
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      "roles/len-test-omitted",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil || resp == nil {
+		t.Fatalf("read: err=%v, resp=%v", err, resp)
+	}
+	if resp.Data["password_length"] != defaultPasswordLength {
+		t.Errorf("password_length = %v, want %d (default)", resp.Data["password_length"], defaultPasswordLength)
 	}
 }

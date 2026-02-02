@@ -2,6 +2,7 @@ package solacevaultplugin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
@@ -32,6 +33,11 @@ func pathRoles(b *solaceBackend) []*framework.Path {
 					Type:        framework.TypeDurationSecond,
 					Description: "How often to rotate the password, in seconds. 0 disables automatic rotation.",
 					Default:     0,
+				},
+				"password_length": {
+					Type:        framework.TypeInt,
+					Description: "Length of generated passwords. Must be between 16 and 128. Default: 25.",
+					Default:     25,
 				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
@@ -79,12 +85,16 @@ func (b *solaceBackend) pathRolesWrite(ctx context.Context, req *logical.Request
 	broker := d.Get("broker").(string)
 	cliUsername := d.Get("cli_username").(string)
 	rotationPeriodSec := d.Get("rotation_period").(int)
+	passwordLength := d.Get("password_length").(int)
 
 	if broker == "" {
 		return logical.ErrorResponse("broker is required"), nil
 	}
 	if cliUsername == "" {
 		return logical.ErrorResponse("cli_username is required"), nil
+	}
+	if passwordLength < 16 || passwordLength > 128 {
+		return logical.ErrorResponse(fmt.Sprintf("password_length must be between 16 and 128, got %d", passwordLength)), nil
 	}
 
 	// Verify the referenced broker exists
@@ -106,6 +116,7 @@ func (b *solaceBackend) pathRolesWrite(ctx context.Context, req *logical.Request
 		Broker:         broker,
 		CLIUsername:    cliUsername,
 		RotationPeriod: time.Duration(rotationPeriodSec) * time.Second,
+		PasswordLength: passwordLength,
 	}
 
 	if existing != nil {
@@ -135,6 +146,7 @@ func (b *solaceBackend) pathRolesRead(ctx context.Context, req *logical.Request,
 		"broker":          role.Broker,
 		"cli_username":    role.CLIUsername,
 		"rotation_period": int(role.RotationPeriod.Seconds()),
+		"password_length": role.PasswordLength,
 	}
 	if !role.LastRotated.IsZero() {
 		data["last_rotated"] = role.LastRotated.Format(time.RFC3339)
