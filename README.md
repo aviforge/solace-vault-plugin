@@ -49,11 +49,11 @@ A complete walkthrough from building the plugin to reading rotated credentials.
 make build
 
 # Start a Vault dev server with a plugin directory
-vault server -dev -dev-root-token-id=root -dev-plugin-dir=./bin &
+vault server -dev -dev-root-token-id=<YOUR_DEV_ROOT_TOKEN> -dev-plugin-dir=./bin &
 
 # Authenticate
 export VAULT_ADDR=http://127.0.0.1:8200
-export VAULT_TOKEN=root
+export VAULT_TOKEN=<YOUR_DEV_ROOT_TOKEN>
 
 # Register and enable the secrets engine
 vault secrets enable -path=solace solace-vault-plugin
